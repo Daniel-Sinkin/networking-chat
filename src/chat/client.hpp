@@ -1,5 +1,6 @@
 #pragma once
 
+#include "common.hpp"
 #include "net.hpp"
 
 #include <system_error>
@@ -12,12 +13,12 @@ public:
     explicit ClientSocket(const AddressInfo& ai) {
         fd_ = socket(ai.family, ai.socket_type, ai.protocol);
         if (fd_ == k_invalid_fd) {
-            throw std::system_error(errno, std::system_category(), "socket() failed");
+            DS_THROW_ERRNO("socket()");
         }
         const auto raw = to_raw_addr(ai.address);
         if (connect(fd_, reinterpret_cast<const sockaddr*>(&raw.storage), raw.len) == -1) {
             close(fd_);
-            throw std::system_error(errno, std::system_category(), "connect() failed");
+            DS_THROW_ERRNO("connect()");
         }
     }
 
@@ -33,6 +34,7 @@ public:
     auto send_message(std::string_view msg) const -> void {
         send(fd_, msg.data(), msg.length(), 0);
     }
+    [[nodiscard]] auto fd() const noexcept -> FileDescriptor { return fd_; }
 
 private:
     FileDescriptor fd_{k_invalid_fd};

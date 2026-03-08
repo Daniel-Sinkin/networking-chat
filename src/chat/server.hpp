@@ -2,10 +2,10 @@
 
 #include "common.hpp"
 #include "net.hpp"
+#include <sys/epoll.h>
 
 #include <cstddef>
 #include <optional>
-#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -25,12 +25,13 @@ public:
     
     [[nodiscard]] auto receive_data() -> std::optional<std::vector<std::byte>> {
         auto n = recv(fd_, buffer_.data(), buffer_.size(), 0);
-        if (n == -1) throw std::system_error(errno, std::system_category(), "recv() failed");
+        if (n == -1) DS_THROW_ERRNO("recv()");
         if (n == 0) { destroy(); return std::nullopt; }
         return std::vector<std::byte>{buffer_.begin(), buffer_.begin() + n};
     }
 
     [[nodiscard]] auto is_connected() const noexcept -> bool { return is_connected_; }
+    [[nodiscard]] auto fd() const noexcept -> FileDescriptor { return fd_; }
 
 private:
     FileDescriptor fd_{k_invalid_fd};
@@ -57,7 +58,7 @@ public:
     explicit ServerSocket(const AddressInfo& ai) {
         fd_ = socket(ai.family, ai.socket_type, ai.protocol);
         if (fd_ == k_invalid_fd) {
-            throw std::system_error(errno, std::system_category(), "socket() failed");
+            DS_THROW_ERRNO("socket()");
         }
         const auto raw = to_raw_addr(ai.address);
         const auto address = reinterpret_cast<const sockaddr*>(&raw.storage);
@@ -65,11 +66,11 @@ public:
         setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
         if (bind(fd_, address, raw.len) == -1) {
             close(fd_);
-            throw std::system_error(errno, std::system_category(), "bind() failed");
+            DS_THROW_ERRNO("bind()");
         }
         if (listen(fd_, k_backlog) == -1) {
             close(fd_);
-            throw std::system_error(errno, std::system_category(), "listen() failed");
+            DS_THROW_ERRNO("listen()");
         }
     }
     ServerSocket(const ServerSocket&) = delete;
@@ -81,30 +82,29 @@ public:
     }
     ~ServerSocket() { destroy(); }
 
-    auto accept_connection() -> void {
+    auto accept_connection() -> FileDescriptor {
         sockaddr_storage client_addr{};
         socklen_t addr_len = sizeof(client_addr);
         int client_fd = accept(fd_, reinterpret_cast<sockaddr*>(&client_addr), &addr_len);
         if (client_fd == k_invalid_fd) {
-            throw std::system_error(errno, std::system_category(), "accept() failed");
+            DS_THROW_ERRNO("accept()");
         }
-        connections_.emplace_back(client_fd);
+        connections_.insert_or_assign(client_fd, ClientConnection{client_fd});
+        return client_fd;
     }
 
-    auto receive_string() -> std::optional<std::string> {
-        if(connections_.empty()) {
-            Logger::get_logger("server").logln("Can't receive without connections!");
-            return std::nullopt;
-        }
-        const auto data = *connections_[0].receive_data();
-        std::string data_str{reinterpret_cast<const char*>(data.data()), data.size()};
-        return data_str;
-    }
+    [[nodiscard]] auto fd() const noexcept -> FileDescriptor { return fd_; }
 
+    auto get_connection(FileDescriptor fd) const -> const ClientConnection& {
+        return connections_.at(fd);
+    }
+    auto get_connection(FileDescriptor fd) -> ClientConnection& {
+        return connections_.at(fd);
+    }
 private:
     static constexpr int k_backlog{5};
     FileDescriptor fd_{k_invalid_fd};
-    std::vector<ClientConnection> connections_{};
+    std::unordered_map<FileDescriptor, ClientConnection> connections_{};
 
     auto steal_from(ServerSocket&& other) -> void {
         destroy();
@@ -119,5 +119,62 @@ private:
         }
     }
 };
+
+class EventPoller {
+    public:
+        EventPoller() {
+            if (fd_ = epoll_create1(0); fd_ == k_invalid_fd) {
+                DS_THROW_ERRNO("epoll_ctl epoll_create1()");
+            }
+        }
+        EventPoller(const EventPoller&) = delete;
+        EventPoller& operator=(const EventPoller&) = delete;
+        EventPoller(EventPoller&& other) noexcept { steal_from(std::move(other)); }
+        EventPoller& operator=(EventPoller&& other) noexcept {
+            if (this != &other) steal_from(std::move(other));
+            return *this;
+        }
+        ~EventPoller() { destroy(); }
+    
+        auto add(FileDescriptor fd, u32 events = EPOLLIN) -> void {
+            epoll_event ev{};
+            ev.events = events;
+            ev.data.fd = fd;
+            if (epoll_ctl(fd_, EPOLL_CTL_ADD, fd, &ev) == -1) {
+                DS_THROW_ERRNO("epoll_ctl ADD");
+            }
+        }
+    
+        auto remove(FileDescriptor fd) -> void {
+            if (epoll_ctl(fd_, EPOLL_CTL_DEL, fd, nullptr) == -1) {
+                DS_THROW_ERRNO("epoll_ctl DEL");
+            }
+        }
+    
+        auto wait(int timeout_ms = -1) -> std::span<epoll_event> {
+            int n = epoll_wait(fd_, events_.data(), static_cast<int>(events_.size()), timeout_ms);
+            if (n == -1) {
+                DS_THROW_ERRNO("epoll_wait()");
+            }
+            return {events_.data(), static_cast<usize>(n)};
+        }
+    
+    private:
+        FileDescriptor fd_{k_invalid_fd};
+        static constexpr usize k_max_events{64};
+        std::array<epoll_event, k_max_events> events_{};
+    
+        auto steal_from(EventPoller&& other) -> void {
+            destroy();
+            fd_ = std::exchange(other.fd_, k_invalid_fd);
+        }
+    
+        auto destroy() -> void {
+            if (fd_ != k_invalid_fd) {
+                close(fd_);
+                fd_ = k_invalid_fd;
+            }
+        }
+    };
 
 } // namespace ds_net

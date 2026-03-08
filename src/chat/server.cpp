@@ -14,15 +14,25 @@ int main() {
     auto& log = Logger::get_logger("server");
     log.logln("Listening on port " + std::to_string(k_default_port));
 
-    server.accept_connection();
-    log.logln("Client connected!");
+    EventPoller poller{};
+    poller.add(server.fd());
     while(true) {
-        try{
-            const auto s_res = server.receive_string();
-            if(!s_res) break;
-            Logger::get_logger("server").logln(std::format("Received Message from Client connection:\n{}", *s_res));
-        } catch (...) {
-            Logger::get_logger("server").logln("Failed to receive string, breaking.");
+        const auto events = poller.wait();
+        for(auto& ev : events) {
+            const auto fd = ev.data.fd;
+            if(fd == server.fd()) {
+                const auto new_fd = server.accept_connection();
+                log.logln(std::format("Got new connection '{}'", new_fd));
+                poller.add(new_fd);
+            } else {
+                auto& conn = server.get_connection(fd);
+                if (const auto res = conn.receive_data(); res) {
+                    std::string msg{reinterpret_cast<const char*>(res->data()), res->size()};
+                    log.logln(std::format("Got data from connection '{}':\n{}", fd, msg));
+                } else {
+                    log.logln(std::format("Connection '{}' disconnected.", fd));
+                }
+            }
         }
     }
 }

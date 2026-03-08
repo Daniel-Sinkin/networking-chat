@@ -8,6 +8,9 @@
 #include <string_view>
 #include <unordered_map>
 
+#define DS_THROW_ERRNO(func_name) \
+    throw std::system_error(errno, std::system_category(), func_name " failed")
+
 namespace ds_net {
 using u8  = std::uint8_t;
 using u16 = std::uint16_t;
