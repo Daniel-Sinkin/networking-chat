@@ -1,43 +1,41 @@
 #include "chat_session.hpp"
 #include "chat_window.hpp"
 #include "imgui_theme.hpp"
-
+//
+#include <print>
+//
 #include <GLFW/glfw3.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_opengl3.h>
 #include <imgui.h>
 
 #if defined(__APPLE__)
-#    include <OpenGL/gl.h>
+#include <OpenGL/gl.h>
 #else
-#    include <GL/gl.h>
+#include <GL/gl.h>
 #endif
 
-namespace networking_chat
-{
+namespace networking_chat {
 
-auto init_glfw_window() -> GLFWwindow*
-{
-    if (glfwInit() == GLFW_FALSE)
-    {
+auto init_glfw_window() -> GLFWwindow * {
+    if (glfwInit() == GLFW_FALSE) {
         return nullptr;
     }
 
 #if defined(__APPLE__)
-    const auto* glsl_version = "#version 150";
+    const auto *glsl_version = "#version 150";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #else
-    const auto* glsl_version = "#version 130";
+    const auto *glsl_version = "#version 130";
     glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 0);
 #endif
 
-    auto* window = glfwCreateWindow(1280, 800, "Networking Chat", nullptr, nullptr);
-    if (window == nullptr)
-    {
+    auto *window = glfwCreateWindow(1280, 800, "Networking Chat", nullptr, nullptr);
+    if (window == nullptr) {
         glfwTerminate();
         return nullptr;
     }
@@ -47,7 +45,7 @@ auto init_glfw_window() -> GLFWwindow*
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    auto& io = ImGui::GetIO();
+    auto &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     apply_chat_theme();
 
@@ -57,8 +55,7 @@ auto init_glfw_window() -> GLFWwindow*
     return window;
 }
 
-auto shutdown_gui(GLFWwindow* window) -> void
-{
+auto shutdown_gui(GLFWwindow *window) -> void {
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();
@@ -66,13 +63,11 @@ auto shutdown_gui(GLFWwindow* window) -> void
     glfwTerminate();
 }
 
-}  // namespace networking_chat
+} // namespace networking_chat
 
-int main()
-{
-    auto* window = networking_chat::init_glfw_window();
-    if (window == nullptr)
-    {
+auto main_window() -> int {
+    auto *window = networking_chat::init_glfw_window();
+    if (window == nullptr) {
         return 1;
     }
 
@@ -83,11 +78,9 @@ int main()
     constexpr auto clear_b = 0.14F;
     constexpr auto clear_a = 1.00F;
 
-    while (glfwWindowShouldClose(window) == GLFW_FALSE)
-    {
+    while (glfwWindowShouldClose(window) == GLFW_FALSE) {
         glfwPollEvents();
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-        {
+        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
             glfwSetWindowShouldClose(window, GLFW_TRUE);
         }
 
@@ -109,5 +102,11 @@ int main()
     }
 
     networking_chat::shutdown_gui(window);
+    return 0;
+}
+
+int main() {
+    std::println("Hello, World!");
+
     return 0;
 }
